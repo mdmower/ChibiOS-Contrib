@@ -65,7 +65,11 @@ uint32_t CyclesPerUs      = (__HSI / 1000000);  /*!< Cycles per micro second    
 #if NUC126_PLL_ENABLED
 uint32_t PllClock         = __HSI;              /*!< PLL Output Clock Frequency          */
 #endif
+#if NUC126_HSE_ENABLED
+const uint32_t gau32ClkSrcTbl[] = {NUC126_HSECLK, __LXT, __HSI, __LIRC, __HIRC48, 0UL, 0UL, __HIRC};
+#else
 const uint32_t gau32ClkSrcTbl[] = {__HXT, __LXT, __HSI, __LIRC, __HIRC48, 0UL, 0UL, __HIRC};
+#endif
 
 #if (NUC126_CONFIG_ENABLED == TRUE)
 
