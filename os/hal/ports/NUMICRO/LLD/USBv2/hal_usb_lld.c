@@ -102,6 +102,12 @@ static const USBEndpointConfig ep0config = {USB_EP_MODE_TYPE_CTRL,
  */
 static uint32_t sram_free_dword_offset = 1UL;
 
+/**
+ * @brief   OUT endpoints whose last accepted packet was DATA1, one bit per
+ *          logical endpoint. The hardware ACKs a repeated packet as new data.
+ */
+static uint32_t out_last_data1;
+
 /*===========================================================================*/
 /* Driver local functions.                                                   */
 /*===========================================================================*/
@@ -189,6 +195,23 @@ size_t usb_memcpy(volatile void* destination, const volatile void* source,
 static void usb_serve_out_endpoint(uint32_t epn)
 {
   USBDriver *const usbp = &USBD1;
+  uint32_t epsts = (USBD->EPSTS >> (USBD_EPSTS_EPSTS0_Pos + 3 * _HW_OUT_EPN(epn))) & 0x7UL;
+
+  if ((epsts == NUC126_USBD_BUSSTATUS_OUTDATA0ACK) ||
+      (epsts == NUC126_USBD_BUSSTATUS_OUTDATA1ACK)) {
+    uint32_t data1 = (epsts == NUC126_USBD_BUSSTATUS_OUTDATA1ACK) ? 1UL : 0UL;
+
+    /* Same toggle as the last accepted packet: a repeat (USB 2.0 8.6.4),
+       drop it and receive again into the same place */
+    if (((out_last_data1 >> epn) & 1UL) == data1) {
+      HW_OUT_EP(epn)->MXPLD = min(usbp->epc[epn]->out_maxsize,
+                                  usbp->epc[epn]->out_state->rxsize -
+                                      usbp->epc[epn]->out_state->rxcnt);
+      return;
+    }
+    out_last_data1 ^= (1UL << epn);
+  }
+
   uint32_t mxpld = HW_OUT_EP(epn)->MXPLD;
   uint32_t rxsize_actual = min(mxpld, usbp->epc[epn]->out_state->rxsize - usbp->epc[epn]->out_state->rxcnt);
 
@@ -348,6 +371,8 @@ static void usb_lld_serve_interrupt(USBDriver* usbp)
       HW_OUT_EP(0)->CFGP = USBD_CFGP_CLRRDY_Msk;
 
       HW_IN_EP(0)->CFG |= USBD_CFG_DSQSYNC_Msk;
+      /* The data stage starts with DATA1 */
+      out_last_data1 &= ~1UL;
       _usb_isr_invoke_setup_cb(&USBD1, 0);
     }
   }
@@ -532,6 +557,8 @@ void usb_lld_init_endpoint(USBDriver* usbp, usbep_t ep)
      reset by SET_CONFIGURATION */
   HW_OUT_EP(ep)->CFGP = USBD_CFGP_CLRRDY_Msk;
   HW_IN_EP(ep)->CFGP = USBD_CFGP_CLRRDY_Msk;
+  /* The first OUT packet is DATA0 */
+  out_last_data1 |= (1UL << ep);
 
   /* If the out logical endpoint is used */
   if (usbp->epc[ep]->out_state) {
@@ -789,6 +816,7 @@ void usb_lld_clear_out(USBDriver* usbp, usbep_t ep)
   HW_OUT_EP(ep)->CFGP &= ~USBD_CFGP_SSTALL_Msk;
   /* The first packet after a halt is DATA0 */
   HW_OUT_EP(ep)->CFG &= ~USBD_CFG_DSQSYNC_Msk;
+  out_last_data1 |= (1UL << ep);
 }
 
 /**
