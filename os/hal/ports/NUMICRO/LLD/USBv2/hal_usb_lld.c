@@ -769,6 +769,8 @@ void usb_lld_clear_out(USBDriver* usbp, usbep_t ep)
 {
   (void)usbp;
   HW_OUT_EP(ep)->CFGP &= ~USBD_CFGP_SSTALL_Msk;
+  /* The first packet after a halt is DATA0 */
+  HW_OUT_EP(ep)->CFG &= ~USBD_CFG_DSQSYNC_Msk;
 }
 
 /**
@@ -783,6 +785,8 @@ void usb_lld_clear_in(USBDriver* usbp, usbep_t ep)
 {
   (void)usbp;
   HW_IN_EP(ep)->CFGP &= ~USBD_CFGP_SSTALL_Msk;
+  /* The first packet after a halt is DATA0 */
+  HW_IN_EP(ep)->CFG &= ~USBD_CFG_DSQSYNC_Msk;
 }
 
 #endif /* HAL_USE_USB */
