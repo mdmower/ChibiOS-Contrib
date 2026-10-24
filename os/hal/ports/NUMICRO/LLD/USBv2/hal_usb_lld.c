@@ -479,6 +479,13 @@ void usb_lld_stop(USBDriver* usbp)
  */
 void usb_lld_reset(USBDriver* usbp)
 {
+  /* Disable every endpoint and clear its ready state, STALL and data
+     toggle */
+  for (uint8_t i = 0; i < NUC126_USB_HW_ENDPOINTS; ++i) {
+    USBD->EP[i].CFGP = USBD_CFGP_CLRRDY_Msk;
+    USBD->EP[i].CFG = 0;
+  }
+
   sram_free_dword_offset = 1UL;
   USBD->FADDR = 0;
   /* EP0 initialization.*/
