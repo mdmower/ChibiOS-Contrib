@@ -528,6 +528,11 @@ void usb_lld_init_endpoint(USBDriver* usbp, usbep_t ep)
                   "isochronous EP cannot be IN and OUT");
   }
 
+  /* Cancel any ready transaction and clear the STALL: the Halt feature is
+     reset by SET_CONFIGURATION */
+  HW_OUT_EP(ep)->CFGP = USBD_CFGP_CLRRDY_Msk;
+  HW_IN_EP(ep)->CFGP = USBD_CFGP_CLRRDY_Msk;
+
   /* If the out logical endpoint is used */
   if (usbp->epc[ep]->out_state) {
     switch (usbp->epc[ep]->ep_mode) {
