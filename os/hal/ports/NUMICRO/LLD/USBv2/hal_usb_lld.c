@@ -36,6 +36,8 @@
 #define NUC126_USBD_CFG_OUT (1UL << USBD_CFG_STATE_Pos)
 #define NUC126_USBD_CFG_IN  (2UL << USBD_CFG_STATE_Pos)
 
+#define NUC126_USBD_INTSTS_EPEVT_Msk (0xFFUL << USBD_INTSTS_EPEVT0_Pos)
+
 #define USBD_SRAM_BASE ((volatile uint8_t*)(USBD_BASE + 0x100))
 
 #define NUC126_USBD_BUSSTATUS_INACK       0UL
@@ -270,6 +272,9 @@ static void usb_lld_serve_interrupt(USBDriver* usbp)
       /* Bus reset */
       USBD->ATTR |= (USBD_ATTR_PHYEN_Msk | USBD_ATTR_USBEN_Msk);
       _usb_reset(usbp);
+      /* EP events read with the reset happened before it: drop them */
+      USBD->INTSTS = intsts & NUC126_USBD_INTSTS_EPEVT_Msk;
+      intsts &= ~NUC126_USBD_INTSTS_EPEVT_Msk;
     }
     if (bussts & USBD_ATTR_SUSPEND_Msk) {
       /* Enable USB but disable PHY */
@@ -284,19 +289,8 @@ static void usb_lld_serve_interrupt(USBDriver* usbp)
   }
 
   if (intsts & USBD_INTSTS_USBIF_Msk) {
-    if (intsts & USBD_INTSTS_SETUP_Msk) {
-      /* Clear event flag */
-      USBD->INTSTS = USBD_INTSTS_SETUP_Msk;
-
-      /* Clear the data IN/OUT ready flag of control end-points */
-      HW_IN_EP(0)->CFGP |= USBD_CFGP_CLRRDY_Msk;
-      HW_OUT_EP(0)->CFGP |= USBD_CFGP_CLRRDY_Msk;
-
-      HW_IN_EP(0)->CFG |= USBD_CFG_DSQSYNC_Msk;
-      _usb_isr_invoke_setup_cb(&USBD1, 0);
-    }
-
-    /* EP events */
+    /* EP events, served before a SETUP of the same read because they belong
+       to the transfers before it */
     if (intsts & USBD_INTSTS_EPEVT0_Msk) {
       /* Clear event flag */
       USBD->INTSTS = USBD_INTSTS_EPEVT0_Msk;
@@ -343,6 +337,18 @@ static void usb_lld_serve_interrupt(USBDriver* usbp)
       /* Clear event flag */
       USBD->INTSTS = (USBD_INTSTS_EPEVT7_Msk);
       usb_serve_in_endpoint(LOGICAL_EPN(7));
+    }
+
+    if (intsts & USBD_INTSTS_SETUP_Msk) {
+      /* Clear event flag */
+      USBD->INTSTS = USBD_INTSTS_SETUP_Msk;
+
+      /* Clear the data IN/OUT ready flag and the STALL of control end-points */
+      HW_IN_EP(0)->CFGP = USBD_CFGP_CLRRDY_Msk;
+      HW_OUT_EP(0)->CFGP = USBD_CFGP_CLRRDY_Msk;
+
+      HW_IN_EP(0)->CFG |= USBD_CFG_DSQSYNC_Msk;
+      _usb_isr_invoke_setup_cb(&USBD1, 0);
     }
   }
 }
